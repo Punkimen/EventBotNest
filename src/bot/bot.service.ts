@@ -3,6 +3,8 @@ import {Telegraf} from 'telegraf';
 import {ConfigService} from '@nestjs/config';
 import {RemindersService} from 'src/reminders/reminders.service';
 import {IReminder, TRepeat} from 'src/reminders/reminders.interface';
+import {InjectQueue} from "@nestjs/bullmq";
+import {Job, Queue} from "bullmq";
 
 type TStepCreate = 'wait_text' | 'wait_repeat' | 'wait_date';
 
@@ -21,11 +23,26 @@ export class BotService implements OnModuleInit {
 	constructor(
 		private readonly configService: ConfigService,
 		private readonly remindersService: RemindersService,
+		@InjectQueue('reminder') private readonly reminderQueue: Queue,
 	) {
 		this.bot = new Telegraf(configService.get('BOT_API') || '');
 	}
 
+	private async setupReminderWorker() {
+		const worker = this.remindersService.getWorker(); // Предполагаем, что вы добавили getter в RemindersService
+
+		worker.on('completed', async (job: Job) => {
+			const { userId, message } = job.data;
+			try {
+				await this.bot.telegram.sendMessage(userId, `⏰ Напоминание: ${message}`);
+			} catch (err) {
+				console.error(`Ошибка отправки напоминания пользователю ${userId}:`, err.message);
+			}
+		});
+	}
+
 	async onModuleInit() {
+		await this.setupReminderWorker();
 		await this.bot.telegram.setMyCommands([
 			{command: 'start', description: 'Запуск бота'},
 			{command: 'create_reminders', description: 'Создать напоминание'},
@@ -40,11 +57,13 @@ export class BotService implements OnModuleInit {
 
 		this.bot.command('start', (ctx) => ctx.reply('test btn work'));
 		this.bot.command('help', (ctx) => {
+
 			console.log(Object.values(TRepeat))
 			return ctx.reply('test btn work')
 		});
 		this.bot.command('my_reminders', async (ctx) => {
-			const reminders = await this.remindersService.getAllReminders();
+			const userId = ctx.chat.id
+			const reminders = await this.remindersService.getAllReminders(userId);
 			console.log('reminders', reminders)
 			const text = reminders.length ? reminders.map((el) => `id: ${el.id}; text: ${el.text}`)
 				.join(';\n') : 'У вас нет напоминаний';
@@ -57,7 +76,8 @@ export class BotService implements OnModuleInit {
 			await ctx.reply('Введите текст напоминания:');
 		});
 		this.bot.command('delete_reminders', async (ctx) => {
-			const reminders = await this.remindersService.getAllReminders()
+			const userId = ctx.chat.id
+			const reminders = await this.remindersService.getAllReminders(userId)
 			ctx.reply('Выберите напоминанте которое хотите удалить?', {
 				reply_markup: {
 					inline_keyboard: [reminders.map(r => {
@@ -89,15 +109,26 @@ export class BotService implements OnModuleInit {
 					}
 				})
 			} else if (currentStep.step === 'wait_date') {
-				const [day, month, year] = ctx.message.text.split('.');
-				const date = new Date(+year, +month - 1, +day);
+				const [dates, time] = ctx.message.text.split(' ');
+				const [day, month, year] = dates.split('.');
+				const [hour, min] = time.split(':');
+				const date = new Date(+year, +month - 1, +day, +hour, +min);
+
 				await this.remindersService.addReminder({
 					text: currentStep.text,
 					repeatType: currentStep.repeatType,
-					nextDateNotification: date
+					nextDateNotification: date,
+					userId: userId
 				}).then(data=> {
 					console.log('add reminder', data)
 				})
+
+				await this.remindersService.scheduleReminder(
+					userId.toString(),
+					currentStep.text,
+					date
+				);
+
 				await ctx.reply('Напоминание успешно создано!');
 				userStepMap.delete(ctx.chat.id);
 			}
@@ -115,7 +146,7 @@ export class BotService implements OnModuleInit {
 			current.step = 'wait_date'
 			userStepMap.set(userId, current)
 			await ctx.reply(
-				'Введите дату следующего уведомления (в формате ДД.ММ.ГГГГ):',
+				'Введите дату следующего уведомления (в формате ДД.ММ.ГГГГ ЧЧ:ММ):',
 			);
 		});
 		this.bot.action(/^id_(.+)$/, async (ctx) => {

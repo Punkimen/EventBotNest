@@ -24,6 +24,7 @@ enum TRepeat {
 
 model Reminder {
   id                  Int      @id @default(autoincrement())
+  userId              Int
   text                String
   repeatType          TRepeat
   nextDateNotification DateTime
