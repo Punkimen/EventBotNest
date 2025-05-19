@@ -2,9 +2,9 @@ import { Injectable, OnModuleInit } from '@nestjs/common';
 import { Telegraf } from 'telegraf';
 import { ConfigService } from '@nestjs/config';
 import { RemindersService } from 'src/reminders/reminders.service';
-import { IReminder, TRepeat } from 'src/reminders/reminders.interface';
+import { TRepeat } from 'src/reminders/reminders.interface';
 import { InjectQueue } from '@nestjs/bullmq';
-import { Job, Queue } from 'bullmq';
+import { Queue } from 'bullmq';
 
 type TStepCreate = 'wait_text' | 'wait_repeat' | 'wait_date';
 
@@ -28,27 +28,9 @@ export class BotService implements OnModuleInit {
     this.bot = new Telegraf(configService.get('BOT_API') || '');
   }
 
-  private setupReminderWorker() {
-    const worker = this.remindersService.getWorker(); // Предполагаем, что вы добавили getter в RemindersService
-
-    worker.on('completed', async (job: Job) => {
-      const { userId, message } = job.data;
-      try {
-        await this.bot.telegram.sendMessage(
-          userId,
-          `⏰ Напоминание: ${message}`,
-        );
-      } catch (err) {
-        console.error(
-          `Ошибка отправки напоминания пользователю ${userId}:`,
-          err.message,
-        );
-      }
-    });
-  }
+  private setupReminderWorker() {}
 
   async onModuleInit() {
-    await this.setupReminderWorker();
     await this.bot.telegram.setMyCommands([
       { command: 'start', description: 'Запуск бота' },
       { command: 'create_reminders', description: 'Создать напоминание' },
@@ -167,7 +149,7 @@ export class BotService implements OnModuleInit {
       const userId = ctx.from?.id;
       if (!userId) return;
 
-      const reminderId = +ctx.match.input.split('_')[1] as IReminder['id'];
+      const reminderId = +ctx.match.input.split('_')[1];
       if (!reminderId)
         return ctx.reply('Такого напоминания не найдено, попробуйте позже');
       await this.remindersService.removeReminder(reminderId);

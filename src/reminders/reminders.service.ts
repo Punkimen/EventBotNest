@@ -21,7 +21,7 @@ export class RemindersService {
     this.worker = new Worker(
       'reminder',
       async (job: Job) => {
-        return job.data; // Просто возвращаем данные, обработка будет в BotService
+        return (await job.data) as Record<string, unknown>;
       },
       {
         connection: {
@@ -66,7 +66,6 @@ export class RemindersService {
   }
 
   async scheduleReminder(userId: string, message: string, date: Date) {
-    // const delay = 5000;
     const delay = date.getTime() - Date.now();
     console.log('delay', delay, date, Date.now().toString());
     if (delay <= 0) throw new Error('Invalid reminder date');
