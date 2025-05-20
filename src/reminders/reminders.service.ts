@@ -65,19 +65,36 @@ export class RemindersService {
     return this.worker;
   }
 
-  async scheduleReminder(userId: string, message: string, date: Date) {
+  async scheduleReminder(
+    userId: string,
+    message: string,
+    date: Date,
+    reminderId?: string,
+  ) {
     const delay = date.getTime() - Date.now();
-    console.log('delay', delay, date, Date.now().toString());
     if (delay <= 0) throw new Error('Invalid reminder date');
 
     await this.reminderQueue.add(
       'sendReminder',
-      { userId, message },
+      { userId, message, reminderId },
       { delay }, // Задержка в миллисекундах
     );
   }
-  private async handleReminder(job: Job<{ userId: string; message: string }>) {
-    const { userId, message } = job.data;
+  async handleReminder(job: {
+    userId: string;
+    message: string;
+    reminderId?: string;
+  }) {
+    const { userId, message, reminderId } = job;
+
+    if (!reminderId) {
+      console.log(`reminder id not found ${reminderId}`);
+      return;
+    }
+
+    await this.prisma.reminder.delete({
+      where: { id: +reminderId },
+    });
     // Здесь логика отправки в Telegram (замените на ваш метод)
     console.log(`Sending reminder to user ${userId}: ${message}`);
     // Пометить напоминание как отправленное в БД (если нужно)

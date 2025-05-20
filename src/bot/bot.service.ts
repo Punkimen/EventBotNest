@@ -28,7 +28,7 @@ export class BotService implements OnModuleInit {
     this.bot = new Telegraf(configService.get('BOT_API') || '');
   }
 
-  private setupReminderWorker() {}
+  private setupReminderWorker() { }
 
   async onModuleInit() {
     await this.bot.telegram.setMyCommands([
@@ -108,8 +108,7 @@ export class BotService implements OnModuleInit {
         const [day, month, year] = dates.split('.');
         const [hour, min] = time.split(':');
         const date = new Date(+year, +month - 1, +day, +hour, +min);
-
-        await this.remindersService
+        const reminder = await this.remindersService
           .addReminder({
             text: currentStep.text,
             repeatType: currentStep.repeatType,
@@ -118,12 +117,18 @@ export class BotService implements OnModuleInit {
           })
           .then((data) => {
             console.log('add reminder', data);
+            return data;
           });
-
+        console.log('reminder schedule', reminder);
+        if (!reminder) {
+          console.log('reminder not founr', reminder);
+          return;
+        }
         await this.remindersService.scheduleReminder(
           userId.toString(),
           currentStep.text,
           date,
+          reminder?.id.toString() || '',
         );
 
         await ctx.reply('Напоминание успешно создано!');

@@ -4,6 +4,12 @@ import { RemindersService } from 'src/reminders/reminders.service';
 import { ConfigService } from '@nestjs/config';
 import { Job } from 'bullmq';
 
+interface IJobData {
+  userId: string;
+  message: string;
+  reminderId?: string;
+}
+
 @Processor('reminder')
 export class TestProcessor extends WorkerHost {
   private bot: Telegraf;
@@ -16,10 +22,11 @@ export class TestProcessor extends WorkerHost {
     this.bot = new Telegraf(configService.get('BOT_API') || '');
   }
 
-  async process(job: Job<any, any, string>): Promise<any> {
-    console.log('jpb', job);
+  async process(job: Job<IJobData, any, string>): Promise<any> {
     const { userId, message } = job.data;
-    this.bot.telegram.sendMessage(userId, message);
+    console.log('job data', job.data);
+    this.remindersService.handleReminder(job.data);
+    await this.bot.telegram.sendMessage(userId, message);
     return await new Promise((resolve) => resolve('resolve promise'));
   }
 
