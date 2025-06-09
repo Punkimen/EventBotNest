@@ -28,14 +28,16 @@ export class BotService implements OnModuleInit {
     this.bot = new Telegraf(configService.get('BOT_API') || '');
   }
 
-  private setupReminderWorker() { }
+  private setupReminderWorker() {}
 
   async onModuleInit() {
     await this.bot.telegram.setMyCommands([
       { command: 'start', description: 'Запуск бота' },
       { command: 'create_reminders', description: 'Создать напоминание' },
       { command: 'my_reminders', description: 'Мои напоминания' },
+      { command: 'clean_jobs', description: 'Очистить очередь' },
       { command: 'delete_reminders', description: 'Удалить напоминание' },
+      { command: 'get_jobs', description: 'Получить очередь' },
       { command: 'help', description: 'Помощь по командам' },
     ]);
 
@@ -44,10 +46,12 @@ export class BotService implements OnModuleInit {
     });
 
     this.bot.command('start', (ctx) => ctx.reply('test btn work'));
+
     this.bot.command('help', (ctx) => {
       console.log(Object.values(TRepeat));
       return ctx.reply('test btn work');
     });
+
     this.bot.command('my_reminders', async (ctx) => {
       const userId = ctx.chat.id;
       const reminders = await this.remindersService.getAllReminders(userId);
@@ -57,6 +61,7 @@ export class BotService implements OnModuleInit {
         : 'У вас нет напоминаний';
       return ctx.reply(text);
     });
+
     this.bot.command('create_reminders', async (ctx) => {
       const uid = ctx.chat.id;
       if (!uid) return;
@@ -67,10 +72,11 @@ export class BotService implements OnModuleInit {
       });
       await ctx.reply('Введите текст напоминания:');
     });
+
     this.bot.command('delete_reminders', async (ctx) => {
       const userId = ctx.chat.id;
       const reminders = await this.remindersService.getAllReminders(userId);
-      ctx.reply('Выберите напоминанте которое хотите удалить?', {
+      await ctx.reply('Выберите напоминанте которое хотите удалить?', {
         reply_markup: {
           inline_keyboard: [
             reminders.map((r) => {
@@ -82,6 +88,17 @@ export class BotService implements OnModuleInit {
           ],
         },
       });
+    });
+
+    this.bot.command('get_jobs', async (ctx) => {
+      const jobs = await this.remindersService.getJobs();
+      console.log('jobs', jobs);
+      await ctx.reply('Вывел работы в консоль');
+    });
+
+    this.bot.command('clean_jobs', async (ctx) => {
+      await this.remindersService.cleanJobs();
+      await ctx.reply('Очистил очередь');
     });
 
     this.bot.on('text', async (ctx) => {
@@ -129,6 +146,7 @@ export class BotService implements OnModuleInit {
           currentStep.text,
           date,
           reminder?.id.toString() || '',
+          reminder.repeatType,
         );
 
         await ctx.reply('Напоминание успешно создано!');
