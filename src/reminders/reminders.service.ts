@@ -4,6 +4,7 @@ import { Reminder } from '@prisma/client';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Job, Queue, Worker } from 'bullmq';
 import { ConfigService } from '@nestjs/config';
+import { TRepeat } from 'generated/prisma';
 
 @Injectable()
 export class RemindersService {
@@ -21,7 +22,7 @@ export class RemindersService {
     this.worker = new Worker(
       'reminder',
       async (job: Job) => {
-        return job.data; // Просто возвращаем данные, обработка будет в BotService
+        return (await job.data) as Record<string, unknown>;
       },
       {
         connection: {
@@ -65,23 +66,59 @@ export class RemindersService {
     return this.worker;
   }
 
-  async scheduleReminder(userId: string, message: string, date: Date) {
-    // const delay = 5000;
+  async scheduleReminder(
+    userId: string,
+    message: string,
+    date: Date,
+    reminderId: string,
+    repeatType: TRepeat,
+  ) {
     const delay = date.getTime() - Date.now();
-    console.log('delay', delay, date, Date.now().toString());
     if (delay <= 0) throw new Error('Invalid reminder date');
+    console.log('scheduleReminder', reminderId);
 
     await this.reminderQueue.add(
       'sendReminder',
-      { userId, message },
-      { delay }, // Задержка в миллисекундах
+      { userId, message, reminderId, repeatType },
+      { delay, removeOnComplete: true },
     );
   }
-  private async handleReminder(job: Job<{ userId: string; message: string }>) {
-    const { userId, message } = job.data;
-    // Здесь логика отправки в Telegram (замените на ваш метод)
+
+  async getJobs() {
+    const jobs = await this.reminderQueue.getJobs();
+    return jobs as Job[];
+  }
+
+  async cleanJobs() {
+    await this.reminderQueue.clean(60, 100);
+    console.log('done');
+  }
+
+  async handleReminder(job: {
+    userId: string;
+    message: string;
+    reminderId?: string;
+    repeatType: TRepeat;
+  }) {
+    const { userId, message, reminderId, repeatType } = job;
+
+    if (!reminderId) {
+      console.log(`reminder id not found ${reminderId}`);
+      return;
+    }
+
+    if (repeatType !== 'once') {
+      await this.reminderQueue.add('sendReminder', job, {
+        delay: 5000,
+        removeOnComplete: true,
+      });
+      console.log('add new quque', job);
+      return;
+    }
+
+    await this.prisma.reminder.delete({
+      where: { id: +reminderId },
+    });
     console.log(`Sending reminder to user ${userId}: ${message}`);
-    // Пометить напоминание как отправленное в БД (если нужно)
-    // await this.prisma.reminder.update(...);
   }
 }

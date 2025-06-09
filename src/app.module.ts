@@ -2,12 +2,12 @@ import { Module } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { BotModule } from './bot/bot.module';
-import {ConfigModule, ConfigService} from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { RemindersService } from './reminders/reminders.service';
 import { RemindersModule } from './reminders/reminders.module';
 import { PrismaService } from './prisma/prisma.service';
 import { PrismaModule } from './prisma/prisma.module';
-import {BullModule} from "@nestjs/bullmq";
+import { BullModule } from '@nestjs/bullmq';
 
 @Module({
   imports: [
@@ -18,7 +18,7 @@ import {BullModule} from "@nestjs/bullmq";
     }),
     BullModule.forRootAsync({
       imports: [ConfigModule],
-      useFactory: async (config: ConfigService) => ({
+      useFactory: (config: ConfigService) => ({
         connection: {
           host: config.get('REDIS_HOST'),
           port: config.get('REDIS_PORT'),
@@ -27,7 +27,7 @@ import {BullModule} from "@nestjs/bullmq";
       inject: [ConfigService],
     }),
     BullModule.registerQueue({
-      name: 'reminder', // Название очереди
+      name: 'reminder',
     }),
 
     RemindersModule,
@@ -36,4 +36,4 @@ import {BullModule} from "@nestjs/bullmq";
   controllers: [AppController],
   providers: [AppService, RemindersService, PrismaService],
 })
-export class AppModule { }
+export class AppModule {}

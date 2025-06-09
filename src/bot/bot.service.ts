@@ -2,9 +2,9 @@ import { Injectable, OnModuleInit } from '@nestjs/common';
 import { Telegraf } from 'telegraf';
 import { ConfigService } from '@nestjs/config';
 import { RemindersService } from 'src/reminders/reminders.service';
-import { IReminder, TRepeat } from 'src/reminders/reminders.interface';
+import { TRepeat } from 'src/reminders/reminders.interface';
 import { InjectQueue } from '@nestjs/bullmq';
-import { Job, Queue } from 'bullmq';
+import { Queue } from 'bullmq';
 
 type TStepCreate = 'wait_text' | 'wait_repeat' | 'wait_date';
 
@@ -28,32 +28,16 @@ export class BotService implements OnModuleInit {
     this.bot = new Telegraf(configService.get('BOT_API') || '');
   }
 
-  private setupReminderWorker() {
-    const worker = this.remindersService.getWorker(); // Предполагаем, что вы добавили getter в RemindersService
-
-    worker.on('completed', async (job: Job) => {
-      const { userId, message } = job.data;
-      try {
-        await this.bot.telegram.sendMessage(
-          userId,
-          `⏰ Напоминание: ${message}`,
-        );
-      } catch (err) {
-        console.error(
-          `Ошибка отправки напоминания пользователю ${userId}:`,
-          err.message,
-        );
-      }
-    });
-  }
+  private setupReminderWorker() {}
 
   async onModuleInit() {
-    await this.setupReminderWorker();
     await this.bot.telegram.setMyCommands([
       { command: 'start', description: 'Запуск бота' },
       { command: 'create_reminders', description: 'Создать напоминание' },
       { command: 'my_reminders', description: 'Мои напоминания' },
+      { command: 'clean_jobs', description: 'Очистить очередь' },
       { command: 'delete_reminders', description: 'Удалить напоминание' },
+      { command: 'get_jobs', description: 'Получить очередь' },
       { command: 'help', description: 'Помощь по командам' },
     ]);
 
@@ -62,10 +46,12 @@ export class BotService implements OnModuleInit {
     });
 
     this.bot.command('start', (ctx) => ctx.reply('test btn work'));
+
     this.bot.command('help', (ctx) => {
       console.log(Object.values(TRepeat));
       return ctx.reply('test btn work');
     });
+
     this.bot.command('my_reminders', async (ctx) => {
       const userId = ctx.chat.id;
       const reminders = await this.remindersService.getAllReminders(userId);
@@ -75,6 +61,7 @@ export class BotService implements OnModuleInit {
         : 'У вас нет напоминаний';
       return ctx.reply(text);
     });
+
     this.bot.command('create_reminders', async (ctx) => {
       const uid = ctx.chat.id;
       if (!uid) return;
@@ -85,10 +72,11 @@ export class BotService implements OnModuleInit {
       });
       await ctx.reply('Введите текст напоминания:');
     });
+
     this.bot.command('delete_reminders', async (ctx) => {
       const userId = ctx.chat.id;
       const reminders = await this.remindersService.getAllReminders(userId);
-      ctx.reply('Выберите напоминанте которое хотите удалить?', {
+      await ctx.reply('Выберите напоминанте которое хотите удалить?', {
         reply_markup: {
           inline_keyboard: [
             reminders.map((r) => {
@@ -100,6 +88,17 @@ export class BotService implements OnModuleInit {
           ],
         },
       });
+    });
+
+    this.bot.command('get_jobs', async (ctx) => {
+      const jobs = await this.remindersService.getJobs();
+      console.log('jobs', jobs);
+      await ctx.reply('Вывел работы в консоль');
+    });
+
+    this.bot.command('clean_jobs', async (ctx) => {
+      await this.remindersService.cleanJobs();
+      await ctx.reply('Очистил очередь');
     });
 
     this.bot.on('text', async (ctx) => {
@@ -126,8 +125,7 @@ export class BotService implements OnModuleInit {
         const [day, month, year] = dates.split('.');
         const [hour, min] = time.split(':');
         const date = new Date(+year, +month - 1, +day, +hour, +min);
-
-        await this.remindersService
+        const reminder = await this.remindersService
           .addReminder({
             text: currentStep.text,
             repeatType: currentStep.repeatType,
@@ -136,12 +134,19 @@ export class BotService implements OnModuleInit {
           })
           .then((data) => {
             console.log('add reminder', data);
+            return data;
           });
-
+        console.log('reminder schedule', reminder);
+        if (!reminder) {
+          console.log('reminder not founr', reminder);
+          return;
+        }
         await this.remindersService.scheduleReminder(
           userId.toString(),
           currentStep.text,
           date,
+          reminder?.id.toString() || '',
+          reminder.repeatType,
         );
 
         await ctx.reply('Напоминание успешно создано!');
@@ -167,7 +172,7 @@ export class BotService implements OnModuleInit {
       const userId = ctx.from?.id;
       if (!userId) return;
 
-      const reminderId = +ctx.match.input.split('_')[1] as IReminder['id'];
+      const reminderId = +ctx.match.input.split('_')[1];
       if (!reminderId)
         return ctx.reply('Такого напоминания не найдено, попробуйте позже');
       await this.remindersService.removeReminder(reminderId);
