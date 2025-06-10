@@ -3,13 +3,11 @@ import { Telegraf } from 'telegraf';
 import { RemindersService } from 'src/reminders/reminders.service';
 import { ConfigService } from '@nestjs/config';
 import { Job } from 'bullmq';
-import { TRepeat } from 'generated/prisma';
 
-interface IJobData {
+export interface IJobData {
   userId: string;
   message: string;
   reminderId: string;
-  repeatType: TRepeat;
 }
 
 @Processor('reminder')

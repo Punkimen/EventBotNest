@@ -5,6 +5,7 @@ import { RemindersService } from 'src/reminders/reminders.service';
 import { TRepeat } from 'src/reminders/reminders.interface';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
+import { dateHandler } from 'src/utils/date.utils';
 
 type TStepCreate = 'wait_text' | 'wait_repeat' | 'wait_date';
 
@@ -93,7 +94,8 @@ export class BotService implements OnModuleInit {
     this.bot.command('get_jobs', async (ctx) => {
       const jobs = await this.remindersService.getJobs();
       console.log('jobs', jobs);
-      await ctx.reply('Вывел работы в консоль');
+      const test = dateHandler.getDate();
+      await ctx.reply(`Вывел работы в консоль ${test.toISOString()}`);
     });
 
     this.bot.command('clean_jobs', async (ctx) => {
@@ -122,9 +124,19 @@ export class BotService implements OnModuleInit {
         });
       } else if (currentStep.step === 'wait_date') {
         const [dates, time] = ctx.message.text.split(' ');
-        const [day, month, year] = dates.split('.');
-        const [hour, min] = time.split(':');
+        const [day, month, year] = dates?.split('.') || [0, 0, 0];
+        const [hour, min] = time?.split(':') || [0, 0];
         const date = new Date(+year, +month - 1, +day, +hour, +min);
+
+        console.log('date', dateHandler.nowDate(), date);
+        if (
+          isNaN(date.getTime()) ||
+          dateHandler.nowDate().getTime() - date.getTime() > 0
+        ) {
+          ctx.reply('Неверный формат даты или времени');
+          return;
+        }
+
         const reminder = await this.remindersService
           .addReminder({
             text: currentStep.text,
@@ -136,20 +148,22 @@ export class BotService implements OnModuleInit {
             console.log('add reminder', data);
             return data;
           });
-        console.log('reminder schedule', reminder);
         if (!reminder) {
           console.log('reminder not founr', reminder);
           return;
         }
-        await this.remindersService.scheduleReminder(
-          userId.toString(),
-          currentStep.text,
-          date,
-          reminder?.id.toString() || '',
-          reminder.repeatType,
-        );
+        try {
+          await this.remindersService.scheduleReminder(
+            userId.toString(),
+            currentStep.text,
+            date,
+            reminder?.id.toString() || '',
+          );
+          await ctx.reply('Напоминание успешно создано!');
+        } catch {
+          await ctx.reply('Напоминание не создано!');
+        }
 
-        await ctx.reply('Напоминание успешно создано!');
         userStepMap.delete(ctx.chat.id);
       }
     });

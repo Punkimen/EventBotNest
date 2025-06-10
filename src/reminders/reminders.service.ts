@@ -4,7 +4,8 @@ import { Reminder } from '@prisma/client';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Job, Queue, Worker } from 'bullmq';
 import { ConfigService } from '@nestjs/config';
-import { TRepeat } from 'generated/prisma';
+import { dateHandler } from 'src/utils/date.utils';
+import { IJobData } from 'src/bot/bot.proccessor';
 
 @Injectable()
 export class RemindersService {
@@ -43,6 +44,7 @@ export class RemindersService {
         userId: userId,
       },
     });
+    console.log('getAllReminders', data);
     return data;
   }
 
@@ -62,24 +64,21 @@ export class RemindersService {
     });
   }
 
-  getWorker() {
-    return this.worker;
-  }
-
   async scheduleReminder(
     userId: string,
     message: string,
     date: Date,
     reminderId: string,
-    repeatType: TRepeat,
   ) {
     const delay = date.getTime() - Date.now();
-    if (delay <= 0) throw new Error('Invalid reminder date');
+    if (delay <= 0) {
+      throw new Error('Invalid reminder date');
+    }
     console.log('scheduleReminder', reminderId);
 
     await this.reminderQueue.add(
-      'sendReminder',
-      { userId, message, reminderId, repeatType },
+      'reminder',
+      { userId, message, reminderId },
       { delay, removeOnComplete: true },
     );
   }
@@ -90,35 +89,48 @@ export class RemindersService {
   }
 
   async cleanJobs() {
-    await this.reminderQueue.clean(60, 100);
+    const jobs = await this.reminderQueue.getJobs();
+    for (const jober of jobs) {
+      await this.reminderQueue.remove(jober.id);
+    }
     console.log('done');
   }
 
-  async handleReminder(job: {
-    userId: string;
-    message: string;
-    reminderId?: string;
-    repeatType: TRepeat;
-  }) {
-    const { userId, message, reminderId, repeatType } = job;
-
+  async handleReminder(job: IJobData) {
+    const { reminderId } = job;
+    console.log('handleReminder', job);
     if (!reminderId) {
-      console.log(`reminder id not found ${reminderId}`);
-      return;
+      throw new Error(`reminder id not found ${reminderId}`);
     }
-
-    if (repeatType !== 'once') {
-      await this.reminderQueue.add('sendReminder', job, {
-        delay: 5000,
-        removeOnComplete: true,
-      });
-      console.log('add new quque', job);
-      return;
-    }
-
-    await this.prisma.reminder.delete({
-      where: { id: +reminderId },
+    const reminder = await this.prisma.reminder.findFirst({
+      where: {
+        id: +reminderId,
+      },
     });
-    console.log(`Sending reminder to user ${userId}: ${message}`);
+
+    if (!reminder) {
+      throw new Error(`reminder is not found ${reminderId}`);
+    }
+
+    if (reminder.repeatType === 'once') {
+      console.log('once');
+      await this.prisma.reminder.delete({
+        where: { id: +reminderId },
+      });
+      return;
+    }
+
+    const nowDate = new Date();
+    const nextDate = dateHandler.getNextDate(nowDate, reminder.repeatType);
+
+    await this.prisma.reminder.update({
+      where: { id: +reminderId },
+      data: { nextDateNotification: nextDate },
+    });
+
+    await this.reminderQueue.add('reminder', job, {
+      delay: nowDate.getTime() - nextDate.getTime(),
+      removeOnComplete: true,
+    });
   }
 }

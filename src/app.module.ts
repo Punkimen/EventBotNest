@@ -1,5 +1,4 @@
 import { Module } from '@nestjs/common';
-import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { BotModule } from './bot/bot.module';
 import { ConfigModule, ConfigService } from '@nestjs/config';
@@ -33,7 +32,6 @@ import { BullModule } from '@nestjs/bullmq';
     RemindersModule,
     PrismaModule,
   ],
-  controllers: [AppController],
   providers: [AppService, RemindersService, PrismaService],
 })
 export class AppModule {}
